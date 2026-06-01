@@ -30,21 +30,20 @@ st.markdown("""
         margin-bottom: 10px !important;
     }
     
+    /* 合計金額を一番下にベタ付けし、文字を左に寄せて広告を避ける */
     .sticky-footer {
         position: fixed;
         left: 0;
-        bottom: 45px; 
+        bottom: 0; 
         width: 100%;
         background-color: #111827; 
         color: #f8fafc;
-        text-align: center;
-        padding: 15px;
+        text-align: left; 
+        padding: 15px 20px; 
         font-size: 1.4rem;
         font-weight: bold;
         box-shadow: 0 -8px 20px rgba(0,0,0,0.5);
         z-index: 999999;
-        border-top-left-radius: 15px;
-        border-top-right-radius: 15px;
     }
     .main-content {
         margin-bottom: 120px;
@@ -94,7 +93,7 @@ if uploaded_files:
                         if img.mode != 'RGB':
                             img = img.convert('RGB')
                         
-                        # ★ 画像圧縮の緩和（解像度2000px, 品質95%で鮮明さを担保）
+                        # 画像圧縮の緩和（解像度2000px, 品質95%で鮮明さを担保）
                         max_width = 2000
                         if img.width > max_width:
                             ratio = max_width / img.width
@@ -169,9 +168,10 @@ if uploaded_files:
             st.session_state.raw_data = None
             st.rerun()
 
+        # 左寄せ＆短縮テキストに変更した追従フッター
         st.markdown(f"""
             <div class="sticky-footer">
-                シミュレーション合計: ¥ {total_amount:,.0f}
+                合計: ¥ {total_amount:,.0f}
             </div>
         """, unsafe_allow_html=True)
 

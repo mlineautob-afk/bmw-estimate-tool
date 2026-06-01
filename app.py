@@ -15,31 +15,20 @@ URL = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash
 st.set_page_config(page_title="見積再計算ツール Pro", layout="wide")
 
 # --------------------------------------------------
-# ★ スマホUI最適化CSS（無駄な非表示コードは撤去）
+# ★ スマホUI最適化CSS
 # --------------------------------------------------
 st.markdown("""
     <style>
-    /* スマホ用にボタンを大きく押しやすくする */
-    div.stButton > button {
-        width: 100% !important;
-        height: 3.5rem !important;
-        font-size: 1.2rem !important;
-        font-weight: bold !important;
-        border-radius: 10px !important;
-        margin-top: 10px !important;
-        margin-bottom: 10px !important;
-    }
-    
-    /* 合計金額のメーターをスマホ画面の下部に固定（スティッキー表示） */
+    /* 合計金額のメーターを「赤い帯の上」にズラして固定 */
     .sticky-footer {
         position: fixed;
         left: 0;
-        bottom: 0;
+        bottom: 45px; 
         width: 100%;
         background-color: #111827; 
         color: #f8fafc;
         text-align: center;
-        padding: 18px;
+        padding: 15px;
         font-size: 1.4rem;
         font-weight: bold;
         box-shadow: 0 -8px 20px rgba(0,0,0,0.5);
@@ -47,14 +36,12 @@ st.markdown("""
         border-top-left-radius: 15px;
         border-top-right-radius: 15px;
     }
-    /* フッターに隠れないように下部に余白を作る */
     .main-content {
-        margin-bottom: 120px;
+        margin-bottom: 150px;
     }
     </style>
 """, unsafe_allow_html=True)
 
-# メインコンテンツを囲むコンテナ
 st.markdown('<div class="main-content">', unsafe_allow_html=True)
 
 st.title("見積再計算ツール Pro")
@@ -66,7 +53,8 @@ if uploaded_files:
     if 'raw_data' not in st.session_state:
         st.session_state.raw_data = None
 
-    if st.button("🔥 見積書を解析する"):
+    # ★ 確実なボタンの巨大化
+    if st.button("🔥 見積書を解析する", use_container_width=True):
         with st.spinner('AIが精密解析中...（画像を最適化して送信しています）'):
             try:
                 parts_list = [
@@ -92,26 +80,22 @@ if uploaded_files:
 
                 for f in uploaded_files:
                     mime_type = f.type
-                    # ★ 自動圧縮処理（画像の場合のみ実行）
                     if mime_type in ["image/jpeg", "image/jpg", "image/png"]:
                         img = Image.open(f)
                         if img.mode != 'RGB':
                             img = img.convert('RGB')
                         
-                        # 横幅が1600pxを超える場合は縮小
                         max_width = 1600
                         if img.width > max_width:
                             ratio = max_width / img.width
                             new_height = int(img.height * ratio)
                             img = img.resize((max_width, new_height), Image.Resampling.LANCZOS)
                         
-                        # 圧縮してメモリ上に保存
                         buf = io.BytesIO()
                         img.save(buf, format="JPEG", quality=85)
                         file_bytes = buf.getvalue()
                         mime_type = "image/jpeg"
                     else:
-                        # PDFはそのまま
                         file_bytes = f.getvalue()
 
                     file_base64 = base64.b64encode(file_bytes).decode('utf-8')
@@ -132,12 +116,10 @@ if uploaded_files:
                 st.session_state.raw_data = json.loads(ai_text)
                 
             except Exception as e:
-                # ★ エラーメッセージからAPIキーを物理的に隠蔽
                 safe_error_msg = str(e).replace(API_KEY, "********")
                 st.error(f"解析エラー: {safe_error_msg}")
                 st.warning("Googleのサーバーが混雑しているか、通信タイムアウトが発生しました。10秒ほど待ってから再度ボタンを押してください。")
 
-    # --- 解析データがある場合のUI構築 ---
     if st.session_state.raw_data:
         df_full = pd.DataFrame(st.session_state.raw_data)
         
@@ -155,17 +137,22 @@ if uploaded_files:
             cat_on = st.checkbox(f"📁 {cat} を計算に含める", value=True, key=f"master_{cat}")
             
             if cat_on:
-                if '実施' not in cat_items.columns:
-                    cat_items.insert(0, "実施", True)
+                cat_sum = 0
                 
-                edited_df = st.data_editor(
-                    cat_items.drop(columns=["大項目"]),
-                    hide_index=True,
-                    use_container_width=True,
-                    key=f"editor_{cat}"
-                )
+                # ★ 修正: 表ではなく、スマホ用の「カード型レイアウト」で縦に並べる
+                for idx, row in cat_items.iterrows():
+                    col1, col2 = st.columns([1, 9])
+                    with col1:
+                        # チェックボックス（ラベルを隠してコンパクトに）
+                        is_checked = st.checkbox(" ", value=True, key=f"chk_{cat}_{idx}", label_visibility="collapsed")
+                    with col2:
+                        # 作業内容を太字で表示し、その下に単価×数量を小さく表示
+                        st.markdown(f"**{row['項目']}**")
+                        st.caption(f"¥{row['単価']:,.0f} × {row['数量']} ＝ **¥{row['金額']:,.0f}**")
+                        
+                    if is_checked:
+                        cat_sum += row['金額']
                 
-                cat_sum = edited_df[edited_df["実施"]]["金額"].sum()
                 total_amount += cat_sum
                 st.write(f"小計: ¥{cat_sum:,.0f}")
             else:
@@ -173,7 +160,8 @@ if uploaded_files:
             
             st.markdown("---")
 
-        if st.button("🗑️ データをリセットして新しい見積もりへ"):
+        # ★ 確実なボタンの巨大化
+        if st.button("🗑️ データをリセットして新しい見積もりへ", use_container_width=True):
             st.session_state.raw_data = None
             st.rerun()
 

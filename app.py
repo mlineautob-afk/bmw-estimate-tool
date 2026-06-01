@@ -8,13 +8,15 @@ import json
 # 初期設定
 # --------------------------------------------------
 API_KEY = st.secrets["GEMINI_API_KEY"]
-URL = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={API_KEY}"
+# URLのモデルを最新の 3.5 Flash に変更
+URL = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key={API_KEY}"
 
 st.set_page_config(page_title="見積再計算ツール", layout="wide")
 st.title("見積再計算ツール")
-st.write("PDFをアップロードすると、カテゴリごとの一括選択と個別調整が可能なシミュレーション表を作成します。")
+st.write("PDFまたはカメラで撮影した写真をアップロードすると、シミュレーション表を作成します。")
 
-uploaded_file = st.file_uploader("BMW見積書 (PDF) をアップロード", type="pdf")
+# ★ 変更点1: 受け付けるファイル形式に画像（jpg, jpeg, png）を追加
+uploaded_file = st.file_uploader("BMW見積書 (PDF / 写真) をアップロード", type=["pdf", "jpg", "jpeg", "png"])
 
 if uploaded_file is not None:
     # 状態の初期化
@@ -28,13 +30,16 @@ if uploaded_file is not None:
         if st.session_state.raw_data is None:
             with st.spinner('AIが精密解析中...（約15秒かかります）'):
                 try:
-                    pdf_base64 = base64.b64encode(uploaded_file.getvalue()).decode('utf-8')
+                    # ★ 変更点2: アップロードされたファイルの「種類（MIMEタイプ）」を自動判定
+                    file_mime_type = uploaded_file.type 
+                    file_base64 = base64.b64encode(uploaded_file.getvalue()).decode('utf-8')
+                    
                     payload = {
                         "contents": [{
                             "parts": [
                                 {
                                     "text": """
-                                    提供された車検見積書（PDF）を視覚的に解析し、作業明細のみを抽出して以下のJSON配列形式で出力してください。
+                                    提供された車検見積書（PDFまたは画像）を視覚的に解析し、作業明細のみを抽出して以下のJSON配列形式で出力してください。
                                     
                                     【見積書の構造と抽出の絶対ルール】
                                     1. 左端付近にある「A」「AA」「AB」「A1」などのアルファベットから始まる行（例：A: 法定2年点検、AA: ワイパーブレード交換など）が「大項目（親タスク）」です。
@@ -51,8 +56,9 @@ if uploaded_file is not None:
                                 },
                                 {
                                     "inline_data": {
-                                        "mime_type": "application/pdf",
-                                        "data": pdf_base64
+                                        # ★ 変更点3: 固定の "application/pdf" から、自動判定したタイプに変更
+                                        "mime_type": file_mime_type,
+                                        "data": file_base64
                                     }
                                 }
                             ]

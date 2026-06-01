@@ -10,8 +10,8 @@ from PIL import Image
 # 初期設定
 # --------------------------------------------------
 API_KEY = st.secrets["GEMINI_API_KEY"]
-# ★ 安定性最優先のため、エンジンを 1.5 Flash に換装
-URL = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={API_KEY}"
+# ★ 安定性最優先のため、エンジンを 2.5 Flash に換装
+URL = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={API_KEY}"
 
 st.set_page_config(page_title="見積再計算ツール Pro", layout="wide")
 

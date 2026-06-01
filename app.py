@@ -53,7 +53,7 @@ st.markdown("""
 
 st.markdown('<div class="main-content">', unsafe_allow_html=True)
 
-st.title("見積再計算ツール Pro")
+st.title("見積再計算TOOLFinalEdition")
 st.write("PDFまたはカメラで撮影した写真を複数枚アップロードすると、シミュレーション表を作成します。")
 
 uploaded_files = st.file_uploader("BMW見積書 (PDF / 写真) をアップロード", type=["pdf", "jpg", "jpeg", "png"], accept_multiple_files=True)
@@ -62,7 +62,7 @@ if uploaded_files:
     if 'raw_data' not in st.session_state:
         st.session_state.raw_data = None
 
-    if st.button("🔥 見積書を解析する", use_container_width=True):
+    if st.button("🔘　見積書を解析する", use_container_width=True):
         with st.spinner('AIが精密解析中...'):
             try:
                 parts_list = [

@@ -10,16 +10,26 @@ from PIL import Image
 # 初期設定
 # --------------------------------------------------
 API_KEY = st.secrets["GEMINI_API_KEY"]
-# ★ 安定性最優先のため、エンジンを 2.5 Flash に換装
+# 精度と安定性を両立する 2.5 Flash を維持
 URL = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={API_KEY}"
 
 st.set_page_config(page_title="見積再計算ツール Pro", layout="wide")
 
 # --------------------------------------------------
-# ★ スマホUI最適化CSS
+# UI最適化CSS
 # --------------------------------------------------
 st.markdown("""
     <style>
+    div[data-testid="stButton"] button {
+        width: 100% !important;
+        height: 3.5rem !important;
+        font-size: 1.2rem !important;
+        font-weight: bold !important;
+        border-radius: 10px !important;
+        margin-top: 10px !important;
+        margin-bottom: 10px !important;
+    }
+    
     .sticky-footer {
         position: fixed;
         left: 0;
@@ -37,7 +47,7 @@ st.markdown("""
         border-top-right-radius: 15px;
     }
     .main-content {
-        margin-bottom: 150px;
+        margin-bottom: 120px;
     }
     </style>
 """, unsafe_allow_html=True)
@@ -54,7 +64,7 @@ if uploaded_files:
         st.session_state.raw_data = None
 
     if st.button("🔥 見積書を解析する", use_container_width=True):
-        with st.spinner('AIが精密解析中...（通信を安定化させています）'):
+        with st.spinner('AIが精密解析中...'):
             try:
                 parts_list = [
                     {
@@ -84,15 +94,15 @@ if uploaded_files:
                         if img.mode != 'RGB':
                             img = img.convert('RGB')
                         
-                        # ★ 圧縮をさらに強化（1600px -> 1024px, quality 85 -> 80）
-                        max_width = 1024
+                        # ★ 画像圧縮の緩和（解像度2000px, 品質95%で鮮明さを担保）
+                        max_width = 2000
                         if img.width > max_width:
                             ratio = max_width / img.width
                             new_height = int(img.height * ratio)
                             img = img.resize((max_width, new_height), Image.Resampling.LANCZOS)
                         
                         buf = io.BytesIO()
-                        img.save(buf, format="JPEG", quality=80)
+                        img.save(buf, format="JPEG", quality=95)
                         file_bytes = buf.getvalue()
                         mime_type = "image/jpeg"
                     else:
@@ -118,7 +128,7 @@ if uploaded_files:
             except Exception as e:
                 safe_error_msg = str(e).replace(API_KEY, "********")
                 st.error(f"解析エラー: {safe_error_msg}")
-                st.warning("Googleのサーバーが混雑しているか、通信タイムアウトが発生しました。時間を置いてからお試しください。")
+                st.warning("通信エラーが発生しました。時間を置いてからお試しください。")
 
     if st.session_state.raw_data:
         df_full = pd.DataFrame(st.session_state.raw_data)
@@ -137,20 +147,17 @@ if uploaded_files:
             cat_on = st.checkbox(f"📁 {cat} を計算に含める", value=True, key=f"master_{cat}")
             
             if cat_on:
-                cat_sum = 0
+                if '実施' not in cat_items.columns:
+                    cat_items.insert(0, "実施", True)
                 
-                # ★ スマホ用の「カード型レイアウト」で縦に並べる
-                for idx, row in cat_items.iterrows():
-                    col1, col2 = st.columns([1, 9])
-                    with col1:
-                        is_checked = st.checkbox(" ", value=True, key=f"chk_{cat}_{idx}", label_visibility="collapsed")
-                    with col2:
-                        st.markdown(f"**{row['項目']}**")
-                        st.caption(f"¥{row['単価']:,.0f} × {row['数量']} ＝ **¥{row['金額']:,.0f}**")
-                        
-                    if is_checked:
-                        cat_sum += row['金額']
+                edited_df = st.data_editor(
+                    cat_items.drop(columns=["大項目"]),
+                    hide_index=True,
+                    use_container_width=True,
+                    key=f"editor_{cat}"
+                )
                 
+                cat_sum = edited_df[edited_df["実施"]]["金額"].sum()
                 total_amount += cat_sum
                 st.write(f"小計: ¥{cat_sum:,.0f}")
             else:

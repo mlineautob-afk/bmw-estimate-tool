@@ -13,7 +13,7 @@ API_KEY = st.secrets["GEMINI_API_KEY"]
 # 精度と安定性を両立する 2.5 Flash を維持
 URL = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={API_KEY}"
 
-st.set_page_config(page_title="見積再計算ツール Pro", layout="wide")
+st.set_page_config(page_title="見積再計算TOOL FinalEdition", layout="wide")
 
 # --------------------------------------------------
 # UI最適化CSS
@@ -53,7 +53,7 @@ st.markdown("""
 
 st.markdown('<div class="main-content">', unsafe_allow_html=True)
 
-st.title("見積再計算TOOLFinalEdition")
+st.title("見積再計算TOOL FinalEdition")
 st.write("PDFまたはカメラで撮影した写真を複数枚アップロードすると、シミュレーション表を作成します。")
 
 uploaded_files = st.file_uploader("BMW見積書 (PDF / 写真) をアップロード", type=["pdf", "jpg", "jpeg", "png"], accept_multiple_files=True)

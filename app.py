@@ -3,39 +3,23 @@ import pandas as pd
 import requests
 import base64
 import json
+import io
+from PIL import Image
 
 # --------------------------------------------------
 # 初期設定
 # --------------------------------------------------
 API_KEY = st.secrets["GEMINI_API_KEY"]
-# 最新の 3.5 Flash を正確に指定
 URL = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key={API_KEY}"
 
 st.set_page_config(page_title="見積再計算ツール Pro", layout="wide")
 
 # --------------------------------------------------
-# ★スマホ最適化＆下部クレジットを「完全に消し去る」強力CSS
+# ★ スマホUI最適化CSS（無駄な非表示コードは撤去）
 # --------------------------------------------------
 st.markdown("""
     <style>
-    /* 1. 無料版の赤い帯、王冠マーク、メニュー、ステータスを根こそぎ非表示化 */
-    footer, 
-    header, 
-    div[data-testid="stToolbar"], 
-    div[data-testid="stDecoration"], 
-    div[data-testid="stStatusWidget"],
-    div[data-testid="stViewerToolbar"] {
-        display: none !important;
-        visibility: hidden !important;
-    }
-    
-    /* Streamlit Cloud特有の下部広告エリアを強制カット */
-    .viewerBadge_container__1QSob, 
-    [class^="viewerBadge_"] {
-        display: none !important;
-    }
-    
-    /* 2. スマホ用にボタンを大きく押しやすくする */
+    /* スマホ用にボタンを大きく押しやすくする */
     div.stButton > button {
         width: 100% !important;
         height: 3.5rem !important;
@@ -46,13 +30,13 @@ st.markdown("""
         margin-bottom: 10px !important;
     }
     
-    /* 3. 合計金額のメーターをスマホ画面の下部に固定して追従させる（スティッキー表示） */
+    /* 合計金額のメーターをスマホ画面の下部に固定（スティッキー表示） */
     .sticky-footer {
         position: fixed;
         left: 0;
         bottom: 0;
         width: 100%;
-        background-color: #111827; /* 高級感のある深い黒 */
+        background-color: #111827; 
         color: #f8fafc;
         text-align: center;
         padding: 18px;
@@ -76,16 +60,14 @@ st.markdown('<div class="main-content">', unsafe_allow_html=True)
 st.title("見積再計算ツール Pro")
 st.write("PDFまたはカメラで撮影した写真を複数枚アップロードすると、シミュレーション表を作成します。")
 
-# 複数枚のファイル受け入れ（PDF、各種画像）
 uploaded_files = st.file_uploader("BMW見積書 (PDF / 写真) をアップロード", type=["pdf", "jpg", "jpeg", "png"], accept_multiple_files=True)
 
 if uploaded_files:
     if 'raw_data' not in st.session_state:
         st.session_state.raw_data = None
 
-    # --- 解析実行 ---
     if st.button("🔥 見積書を解析する"):
-        with st.spinner('AI（Gemini 3.5 Flash）が精密解析中...'):
+        with st.spinner('AIが精密解析中...（画像を最適化して送信しています）'):
             try:
                 parts_list = [
                     {
@@ -109,11 +91,33 @@ if uploaded_files:
                 ]
 
                 for f in uploaded_files:
-                    file_mime_type = f.type 
-                    file_base64 = base64.b64encode(f.getvalue()).decode('utf-8')
+                    mime_type = f.type
+                    # ★ 自動圧縮処理（画像の場合のみ実行）
+                    if mime_type in ["image/jpeg", "image/jpg", "image/png"]:
+                        img = Image.open(f)
+                        if img.mode != 'RGB':
+                            img = img.convert('RGB')
+                        
+                        # 横幅が1600pxを超える場合は縮小
+                        max_width = 1600
+                        if img.width > max_width:
+                            ratio = max_width / img.width
+                            new_height = int(img.height * ratio)
+                            img = img.resize((max_width, new_height), Image.Resampling.LANCZOS)
+                        
+                        # 圧縮してメモリ上に保存
+                        buf = io.BytesIO()
+                        img.save(buf, format="JPEG", quality=85)
+                        file_bytes = buf.getvalue()
+                        mime_type = "image/jpeg"
+                    else:
+                        # PDFはそのまま
+                        file_bytes = f.getvalue()
+
+                    file_base64 = base64.b64encode(file_bytes).decode('utf-8')
                     parts_list.append({
                         "inline_data": {
-                            "mime_type": file_mime_type,
+                            "mime_type": mime_type,
                             "data": file_base64
                         }
                     })
@@ -126,8 +130,12 @@ if uploaded_files:
                 ai_text = response.json()['candidates'][0]['content']['parts'][0]['text']
                 ai_text = ai_text.replace("```json", "").replace("```", "").strip()
                 st.session_state.raw_data = json.loads(ai_text)
+                
             except Exception as e:
-                st.error(f"解析エラー: {e}")
+                # ★ エラーメッセージからAPIキーを物理的に隠蔽
+                safe_error_msg = str(e).replace(API_KEY, "********")
+                st.error(f"解析エラー: {safe_error_msg}")
+                st.warning("Googleのサーバーが混雑しているか、通信タイムアウトが発生しました。10秒ほど待ってから再度ボタンを押してください。")
 
     # --- 解析データがある場合のUI構築 ---
     if st.session_state.raw_data:
@@ -150,7 +158,6 @@ if uploaded_files:
                 if '実施' not in cat_items.columns:
                     cat_items.insert(0, "実施", True)
                 
-                # エディタを横幅いっぱいに広げる
                 edited_df = st.data_editor(
                     cat_items.drop(columns=["大項目"]),
                     hide_index=True,
@@ -170,7 +177,6 @@ if uploaded_files:
             st.session_state.raw_data = None
             st.rerun()
 
-        # ★合計金額を画面最下部に固定表示（赤い広告を完全に覆い隠します）
         st.markdown(f"""
             <div class="sticky-footer">
                 シミュレーション合計: ¥ {total_amount:,.0f}

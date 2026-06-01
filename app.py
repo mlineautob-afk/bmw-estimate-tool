@@ -10,7 +10,8 @@ from PIL import Image
 # 初期設定
 # --------------------------------------------------
 API_KEY = st.secrets["GEMINI_API_KEY"]
-URL = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key={API_KEY}"
+# ★ 安定性最優先のため、エンジンを 1.5 Flash に換装
+URL = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={API_KEY}"
 
 st.set_page_config(page_title="見積再計算ツール Pro", layout="wide")
 
@@ -19,7 +20,6 @@ st.set_page_config(page_title="見積再計算ツール Pro", layout="wide")
 # --------------------------------------------------
 st.markdown("""
     <style>
-    /* 合計金額のメーターを「赤い帯の上」にズラして固定 */
     .sticky-footer {
         position: fixed;
         left: 0;
@@ -53,9 +53,8 @@ if uploaded_files:
     if 'raw_data' not in st.session_state:
         st.session_state.raw_data = None
 
-    # ★ 確実なボタンの巨大化
     if st.button("🔥 見積書を解析する", use_container_width=True):
-        with st.spinner('AIが精密解析中...（画像を最適化して送信しています）'):
+        with st.spinner('AIが精密解析中...（通信を安定化させています）'):
             try:
                 parts_list = [
                     {
@@ -85,14 +84,15 @@ if uploaded_files:
                         if img.mode != 'RGB':
                             img = img.convert('RGB')
                         
-                        max_width = 1600
+                        # ★ 圧縮をさらに強化（1600px -> 1024px, quality 85 -> 80）
+                        max_width = 1024
                         if img.width > max_width:
                             ratio = max_width / img.width
                             new_height = int(img.height * ratio)
                             img = img.resize((max_width, new_height), Image.Resampling.LANCZOS)
                         
                         buf = io.BytesIO()
-                        img.save(buf, format="JPEG", quality=85)
+                        img.save(buf, format="JPEG", quality=80)
                         file_bytes = buf.getvalue()
                         mime_type = "image/jpeg"
                     else:
@@ -118,7 +118,7 @@ if uploaded_files:
             except Exception as e:
                 safe_error_msg = str(e).replace(API_KEY, "********")
                 st.error(f"解析エラー: {safe_error_msg}")
-                st.warning("Googleのサーバーが混雑しているか、通信タイムアウトが発生しました。10秒ほど待ってから再度ボタンを押してください。")
+                st.warning("Googleのサーバーが混雑しているか、通信タイムアウトが発生しました。時間を置いてからお試しください。")
 
     if st.session_state.raw_data:
         df_full = pd.DataFrame(st.session_state.raw_data)
@@ -139,14 +139,12 @@ if uploaded_files:
             if cat_on:
                 cat_sum = 0
                 
-                # ★ 修正: 表ではなく、スマホ用の「カード型レイアウト」で縦に並べる
+                # ★ スマホ用の「カード型レイアウト」で縦に並べる
                 for idx, row in cat_items.iterrows():
                     col1, col2 = st.columns([1, 9])
                     with col1:
-                        # チェックボックス（ラベルを隠してコンパクトに）
                         is_checked = st.checkbox(" ", value=True, key=f"chk_{cat}_{idx}", label_visibility="collapsed")
                     with col2:
-                        # 作業内容を太字で表示し、その下に単価×数量を小さく表示
                         st.markdown(f"**{row['項目']}**")
                         st.caption(f"¥{row['単価']:,.0f} × {row['数量']} ＝ **¥{row['金額']:,.0f}**")
                         
@@ -160,7 +158,6 @@ if uploaded_files:
             
             st.markdown("---")
 
-        # ★ 確実なボタンの巨大化
         if st.button("🗑️ データをリセットして新しい見積もりへ", use_container_width=True):
             st.session_state.raw_data = None
             st.rerun()

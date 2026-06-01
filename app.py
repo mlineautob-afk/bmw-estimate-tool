@@ -8,18 +8,16 @@ import json
 # 初期設定
 # --------------------------------------------------
 API_KEY = st.secrets["GEMINI_API_KEY"]
-# URLのモデルを最新の 3.5 Flash に変更
 URL = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key={API_KEY}"
 
 st.set_page_config(page_title="見積再計算ツール", layout="wide")
 st.title("見積再計算ツール")
-st.write("PDFまたはカメラで撮影した写真をアップロードすると、シミュレーション表を作成します。")
+st.write("PDFまたはカメラで撮影した写真を複数枚アップロードすると、シミュレーション表を作成します。")
 
-# ★ 変更点1: 受け付けるファイル形式に画像（jpg, jpeg, png）を追加
-uploaded_file = st.file_uploader("BMW見積書 (PDF / 写真) をアップロード", type=["pdf", "jpg", "jpeg", "png"])
+# ★ 変更点1: accept_multiple_files=True を追加して複数枚の撮影・選択を許可
+uploaded_files = st.file_uploader("BMW見積書 (PDF / 写真) をアップロード", type=["pdf", "jpg", "jpeg", "png"], accept_multiple_files=True)
 
-if uploaded_file is not None:
-    # 状態の初期化
+if uploaded_files: # ファイルが1つ以上ある場合
     if 'raw_data' not in st.session_state:
         st.session_state.raw_data = None
     if 'edited_dfs' not in st.session_state:
@@ -30,40 +28,45 @@ if uploaded_file is not None:
         if st.session_state.raw_data is None:
             with st.spinner('AIが精密解析中...（約15秒かかります）'):
                 try:
-                    # ★ 変更点2: アップロードされたファイルの「種類（MIMEタイプ）」を自動判定
-                    file_mime_type = uploaded_file.type 
-                    file_base64 = base64.b64encode(uploaded_file.getvalue()).decode('utf-8')
+                    # ★ 変更点2: AIに渡す「指示書」と「画像データ」のリストを組み立てる
+                    parts_list = [
+                        {
+                            "text": """
+                            提供された車検見積書（PDFまたは複数枚の画像）を視覚的に解析し、作業明細のみを抽出して以下のJSON配列形式で出力してください。
+                            ※複数枚に渡る場合も、すべて統合して1つのJSON配列にまとめてください。
+                            
+                            【見積書の構造と抽出の絶対ルール】
+                            1. 左端付近にある「A」「AA」「AB」「A1」などのアルファベットから始まる行（例：A: 法定2年点検、AA: ワイパーブレード交換など）が「大項目（親タスク）」です。
+                            2. その大項目の下に記載されている個別の部品名や作業名（例：ブレーキパッドペースト、パーツクリーナー等）が「項目（小項目）」です。
+                            3. すべての小項目に対し、それが属している「大項目」の名前（アルファベット記号を含む主作業名）を正確に紐付けて分類してください。
+                            4. 項目名と、その行の右側にある「単価」「数量」「金額」をレイアウトから目で見て正確に紐付けること。絶対に「0」で埋めないこと。
+                            
+                            出力フォーマット例:
+                            [
+                              {"大項目": "A: 法定2年点検", "項目": "検査測定機器使用料", "単価": 1430, "数量": 8, "金額": 11440},
+                              {"大項目": "AA: ワイパーブレード交換", "項目": "ワイパーブレードセット", "単価": 8000, "数量": 1, "金額": 8000}
+                            ]
+                            """
+                        }
+                    ]
+
+                    # アップロードされた全ファイル（写真1枚目、2枚目...）を順番に処理して追加
+                    for f in uploaded_files:
+                        file_mime_type = f.type 
+                        file_base64 = base64.b64encode(f.getvalue()).decode('utf-8')
+                        parts_list.append({
+                            "inline_data": {
+                                "mime_type": file_mime_type,
+                                "data": file_base64
+                            }
+                        })
                     
                     payload = {
                         "contents": [{
-                            "parts": [
-                                {
-                                    "text": """
-                                    提供された車検見積書（PDFまたは画像）を視覚的に解析し、作業明細のみを抽出して以下のJSON配列形式で出力してください。
-                                    
-                                    【見積書の構造と抽出の絶対ルール】
-                                    1. 左端付近にある「A」「AA」「AB」「A1」などのアルファベットから始まる行（例：A: 法定2年点検、AA: ワイパーブレード交換など）が「大項目（親タスク）」です。
-                                    2. その大項目の下に記載されている個別の部品名や作業名（例：ブレーキパッドペースト、パーツクリーナー等）が「項目（小項目）」です。
-                                    3. すべての小項目に対し、それが属している「大項目」の名前（アルファベット記号を含む主作業名）を正確に紐付けて分類してください。
-                                    4. 項目名と、その行の右側にある「単価」「数量」「金額」をレイアウトから目で見て正確に紐付けること。絶対に「0」で埋めないこと。
-                                    
-                                    出力フォーマット例:
-                                    [
-                                      {"大項目": "A: 法定2年点検", "項目": "検査測定機器使用料", "単価": 1430, "数量": 8, "金額": 11440},
-                                      {"大項目": "AA: ワイパーブレード交換", "項目": "ワイパーブレードセット", "単価": 8000, "数量": 1, "金額": 8000}
-                                    ]
-                                    """
-                                },
-                                {
-                                    "inline_data": {
-                                        # ★ 変更点3: 固定の "application/pdf" から、自動判定したタイプに変更
-                                        "mime_type": file_mime_type,
-                                        "data": file_base64
-                                    }
-                                }
-                            ]
+                            "parts": parts_list
                         }]
                     }
+                    
                     headers = {'Content-Type': 'application/json'}
                     response = requests.post(URL, headers=headers, json=payload)
                     response.raise_for_status()
@@ -78,7 +81,6 @@ if uploaded_file is not None:
         if st.session_state.raw_data:
             df_full = pd.DataFrame(st.session_state.raw_data)
             
-            # 数値型に強制変換（エラー回避）
             for col in ['単価', '数量', '金額']:
                 df_full[col] = pd.to_numeric(df_full[col], errors='coerce').fillna(0)
 
@@ -87,19 +89,15 @@ if uploaded_file is not None:
 
             st.success("解析完了。各カテゴリのマスターチェックボックスで一括操作が可能です。")
 
-            # カテゴリごとにループ
             for cat in categories:
                 cat_items = df_full[df_full["大項目"] == cat].copy()
                 
-                # --- マスターチェックボックス ---
                 cat_on = st.checkbox(f"📁 {cat} をすべて含める", value=True, key=f"master_{cat}")
                 
                 if cat_on:
-                    # 個別選択用の列を追加（デフォルトTrue）
                     if '実施' not in cat_items.columns:
                         cat_items.insert(0, "実施", True)
                     
-                    # ユーザーが編集できる表（大項目の列は不要なので隠す）
                     edited_df = st.data_editor(
                         cat_items.drop(columns=["大項目"]),
                         hide_index=True,
@@ -107,7 +105,6 @@ if uploaded_file is not None:
                         key=f"editor_{cat}"
                     )
                     
-                    # チェックが入っている行の金額だけを合計
                     cat_sum = edited_df[edited_df["実施"]]["金額"].sum()
                     total_amount += cat_sum
                     st.write(f"小計: ¥{cat_sum:,.0f}")
@@ -116,7 +113,6 @@ if uploaded_file is not None:
                 
                 st.markdown("---")
 
-            # --- 最終合計 ---
             st.metric(label="シミュレーション合計金額", value=f"¥ {total_amount:,.0f}")
 
             if st.button("データをリセット"):

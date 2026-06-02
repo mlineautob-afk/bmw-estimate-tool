@@ -4,13 +4,13 @@ import requests
 import base64
 import json
 import io
+import time
 from PIL import Image
 
 # --------------------------------------------------
 # 初期設定
 # --------------------------------------------------
 API_KEY = st.secrets["GEMINI_API_KEY"]
-# 精度と安定性を両立する 2.5 Flash を維持
 URL = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={API_KEY}"
 
 st.set_page_config(page_title="見積再計算TOOL FinalEdition", layout="wide")
@@ -26,11 +26,7 @@ st.markdown("""
         font-size: 1.2rem !important;
         font-weight: bold !important;
         border-radius: 10px !important;
-        margin-top: 10px !important;
-        margin-bottom: 10px !important;
     }
-    
-    /* 合計金額を一番下にベタ付けし、文字を左に寄せて広告を避ける */
     .sticky-footer {
         position: fixed;
         left: 0;
@@ -63,71 +59,91 @@ if uploaded_files:
         st.session_state.raw_data = None
 
     if st.button("🔘　見積書を解析する", use_container_width=True):
-        with st.spinner('AIが精密解析中...'):
-            try:
-                parts_list = [
-                    {
-                        "text": """
-                        提供された車検見積書（PDFまたは複数枚の画像）を視覚的に解析し、作業明細のみを抽出して以下のJSON配列形式で出力してください。
-                        ※複数枚に渡る場合も、すべて統合して1つのJSON配列にまとめてください。
-                        
-                        【見積書の構造と抽出の絶対ルール】
-                        1. 左端付近にある「A」「AA」「AB」「A1」などのアルファベットから始まる行（例：A: 法定2年点検、AA: ワイパーブレード交換など）が「大項目（親タスク）」です。
-                        2. その大項目の下に記載されている個別の部品名や作業名（例：ブレーキパッドペースト、パーツクリーナー等）が「項目（小項目）」です。
-                        3. すべての小項目に対し、それが属している「大項目」の名前（アルファベット記号を含む主作業名）を正確に紐付けて分類してください。
-                        4. 項目名と、その行の右側にある「単価」「数量」「金額」をレイアウトから目で見て正確に紐付けること。絶対に「0」で埋めないこと。
-                        
-                        出力フォーマット例:
-                        [
-                          {"大項目": "A: 法定2年点検", "項目": "検査測定機器使用料", "単価": 1430, "数量": 8, "金額": 11440},
-                          {"大項目": "AA: ワイパーブレード交換", "項目": "ワイパーブレードセット", "単価": 8000, "数量": 1, "金額": 8000}
-                        ]
-                        """
-                    }
-                ]
+        with st.spinner('AIが精密解析中...（混雑回避モード稼働中）'):
+            
+            # --- 画像の最適化と1枚への結合処理 ---
+            images = []
+            has_pdf = False
+            pdf_bytes = None
+            
+            for f in uploaded_files:
+                if f.type in ["image/jpeg", "image/jpg", "image/png"]:
+                    img = Image.open(f)
+                    if img.mode != 'RGB':
+                        img = img.convert('RGB')
+                    # 個々の画像を最大幅1500pxにリサイズしてメモリ節約
+                    if img.width > 1500:
+                        ratio = 1500 / img.width
+                        img = img.resize((1500, int(img.height * ratio)), Image.Resampling.LANCZOS)
+                    images.append(img)
+                else:
+                    has_pdf = True
+                    pdf_bytes = f.getvalue()
 
-                for f in uploaded_files:
-                    mime_type = f.type
-                    if mime_type in ["image/jpeg", "image/jpg", "image/png"]:
-                        img = Image.open(f)
-                        if img.mode != 'RGB':
-                            img = img.convert('RGB')
-                        
-                        # 画像圧縮の緩和（解像度2000px, 品質95%で鮮明さを担保）
-                        max_width = 2000
-                        if img.width > max_width:
-                            ratio = max_width / img.width
-                            new_height = int(img.height * ratio)
-                            img = img.resize((max_width, new_height), Image.Resampling.LANCZOS)
-                        
-                        buf = io.BytesIO()
-                        img.save(buf, format="JPEG", quality=95)
-                        file_bytes = buf.getvalue()
-                        mime_type = "image/jpeg"
-                    else:
-                        file_bytes = f.getvalue()
+            # 複数枚の画像がある場合、縦に1枚に結合してサーバーの負荷を劇的に減らす
+            if images and not has_pdf:
+                total_height = sum(img.height for img in images)
+                max_width = max(img.width for img in images)
+                
+                combined_img = Image.new('RGB', (max_width, total_height), (255, 255, 255))
+                current_y = 0
+                for img in images:
+                    combined_img.paste(img, (0, current_y))
+                    current_y += img.height
+                
+                buf = io.BytesIO()
+                combined_img.save(buf, format="JPEG", quality=85) # 高画質と軽量化のベストバランス
+                final_bytes = buf.getvalue()
+                mime_type = "image/jpeg"
+            elif has_pdf:
+                final_bytes = pdf_bytes
+                mime_type = "application/pdf"
+            else:
+                final_bytes = uploaded_files[0].getvalue()
+                mime_type = uploaded_files[0].type
 
-                    file_base64 = base64.b64encode(file_bytes).decode('utf-8')
-                    parts_list.append({
-                        "inline_data": {
-                            "mime_type": mime_type,
-                            "data": file_base64
+            file_base64 = base64.b64encode(final_bytes).decode('utf-8')
+
+            # --- 負荷を極限まで減らしたダイエット版プロンプト ---
+            payload = {
+                "contents": [{
+                    "parts": [
+                        {
+                            "text": "Analyze the provided BMW maintenance estimate sheet and extract all items into a strict JSON array. Rule: Group small items under their respective main uppercase category (e.g., 'A', 'AA'). Format: [{'大項目': 'Category Name', '項目': 'Item Name', '単価': 1000, '数量': 1, '金額': 1000}]. Return ONLY raw JSON, no markdown code blocks."
+                        },
+                        {
+                            "inline_data": {
+                                "mime_type": mime_type,
+                                "data": file_base64
+                            }
                         }
-                    })
-                
-                payload = {"contents": [{"parts": parts_list}]}
-                headers = {'Content-Type': 'application/json'}
-                response = requests.post(URL, headers=headers, json=payload)
-                response.raise_for_status()
-                
-                ai_text = response.json()['candidates'][0]['content']['parts'][0]['text']
-                ai_text = ai_text.replace("```json", "").replace("```", "").strip()
-                st.session_state.raw_data = json.loads(ai_text)
-                
-            except Exception as e:
-                safe_error_msg = str(e).replace(API_KEY, "********")
-                st.error(f"解析エラー: {safe_error_msg}")
-                st.warning("通信エラーが発生しました。時間を置いてからお試しください。")
+                    ]
+                }]
+            }
+            headers = {'Content-Type': 'application/json'}
+
+            # --- 自動リトライ（粘り強いアタック）機能の組み込み ---
+            max_retries = 3
+            success = False
+            
+            for attempt in range(max_retries):
+                try:
+                    response = requests.post(URL, headers=headers, json=payload)
+                    response.raise_for_status()
+                    
+                    ai_text = response.json()['candidates'][0]['content']['parts'][0]['text']
+                    ai_text = ai_text.replace("```json", "").replace("```", "").strip()
+                    st.session_state.raw_data = json.loads(ai_text)
+                    success = True
+                    break # 成功したらループを抜ける
+                except Exception as e:
+                    if attempt < max_retries - 1:
+                        time.sleep(3) # 503エラー時は3秒待って再試行
+                        continue
+                    else:
+                        safe_error_msg = str(e).replace(API_KEY, "********")
+                        st.error(f"解析エラー: {safe_error_msg}")
+                        st.warning("Googleのサーバーが極度に混雑しています。少し時間を空けてから再度お試しください。")
 
     if st.session_state.raw_data:
         df_full = pd.DataFrame(st.session_state.raw_data)
@@ -168,7 +184,6 @@ if uploaded_files:
             st.session_state.raw_data = None
             st.rerun()
 
-        # 左寄せ＆短縮テキストに変更した追従フッター
         st.markdown(f"""
             <div class="sticky-footer">
                 合計: ¥ {total_amount:,.0f}

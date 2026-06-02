@@ -182,7 +182,7 @@ if uploaded_files:
         # --------------------------------------------------
         if final_approved_items:
             final_df = pd.concat(final_approved_items, ignore_index=True)
-            st.markdown("### 📄 最終シミュレーション明細")
+            st.markdown("### 📄 再計算後明細書")
             
             # HTML構築（Markdownの誤作動を防ぐためインデントを排除して1行で結合）
             invoice_html = '<div class="invoice-container"><div class="invoice-header">Final Simulation</div>'

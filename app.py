@@ -177,14 +177,14 @@ if uploaded_files:
                 st.write(f"小計: ¥{cat_sum:,.0f}")
             st.markdown("---")
 
-        # --------------------------------------------------
+       # --------------------------------------------------
         # プロフェッショナル最終明細書（階層レイアウトUI）
         # --------------------------------------------------
         if final_approved_items:
             final_df = pd.concat(final_approved_items, ignore_index=True)
             st.markdown("### 📄 最終シミュレーション明細")
             
-            # HTML構築
+            # HTML構築（Markdownの誤作動を防ぐためインデントを排除して1行で結合）
             invoice_html = '<div class="invoice-container"><div class="invoice-header">Final Simulation</div>'
             
             for cat in final_df["大項目"].unique():
@@ -192,23 +192,13 @@ if uploaded_files:
                 invoice_html += f'<div class="category-block"><div class="category-title">{cat}</div>'
                 
                 for _, row in cat_df.iterrows():
-                    invoice_html += f'''
-                    <div class="item-row">
-                        <span>{row['項目']}</span>
-                        <span>¥{row['金額']:,.0f}</span>
-                    </div>
-                    '''
+                    invoice_html += f'<div class="item-row"><span>{row["項目"]}</span><span>¥{row["金額"]:,.0f}</span></div>'
                 
                 cat_total = cat_df["金額"].sum()
                 invoice_html += f'<div class="subtotal-row">小計: ¥{cat_total:,.0f}</div></div>'
             
-            invoice_html += f'''
-                <div class="final-total-area">
-                    <span class="final-total-label">総合計 (税込想定)</span>
-                    <span class="final-total-amount">¥{total_amount:,.0f}</span>
-                </div>
-            </div>
-            '''
+            invoice_html += f'<div class="final-total-area"><span class="final-total-label">総合計 (税込想定)</span><span class="final-total-amount">¥{total_amount:,.0f}</span></div></div>'
+            
             st.markdown(invoice_html, unsafe_allow_html=True)
             
             csv_data = final_df.drop(columns=["実施"]).to_csv(index=False).encode('utf-8-sig')

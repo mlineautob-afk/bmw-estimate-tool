@@ -109,7 +109,7 @@ if uploaded_files:
                 "contents": [{
                     "parts": [
                         {
-                            "text": "Analyze the provided BMW maintenance estimate sheet and extract all items into a strict JSON array. Rule: Group small items under their respective main uppercase category (e.g., 'A', 'AA'). Format: [{'大項目': 'Category Name', '項目': 'Item Name', '単価': 1000, '数量': 1, '金額': 1000}]. Return ONLY raw JSON, no markdown code blocks."
+                            "text": "Analyze the BMW estimate sheet. Extract all items into a strict JSON array. Rule: Identify main categories starting with uppercase letters and include their full titles (e.g., 'A: 法定2年点検'). Format: [{'大項目': 'A: 法定2年点検', '項目': 'Item Name', '単価': 1000, '数量': 1, '金額': 1000}]. Return ONLY raw JSON."
                         },
                         {
                             "inline_data": {

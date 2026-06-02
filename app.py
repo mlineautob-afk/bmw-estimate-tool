@@ -15,6 +15,9 @@ URL = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash
 
 st.set_page_config(page_title="見積再計算TOOL FinalEdition", layout="wide")
 
+if 'uploader_key' not in st.session_state:
+    st.session_state.uploader_key = 0
+
 # --------------------------------------------------
 # UI最適化CSS
 # --------------------------------------------------
@@ -44,6 +47,14 @@ st.markdown("""
     .main-content {
         margin-bottom: 120px;
     }
+    /* 最終明細書のテーブルデザイン最適化 */
+    table {
+        width: 100%;
+    }
+    th {
+        background-color: #1e293b !important;
+        color: white !important;
+    }
     </style>
 """, unsafe_allow_html=True)
 
@@ -52,16 +63,20 @@ st.markdown('<div class="main-content">', unsafe_allow_html=True)
 st.title("見積再計算TOOL FinalEdition")
 st.write("PDFまたはカメラで撮影した写真を複数枚アップロードすると、シミュレーション表を作成します。")
 
-uploaded_files = st.file_uploader("BMW見積書 (PDF / 写真) をアップロード", type=["pdf", "jpg", "jpeg", "png"], accept_multiple_files=True)
+uploaded_files = st.file_uploader(
+    "BMW見積書 (PDF / 写真) をアップロード", 
+    type=["pdf", "jpg", "jpeg", "png"], 
+    accept_multiple_files=True,
+    key=f"uploader_{st.session_state.uploader_key}"
+)
 
 if uploaded_files:
     if 'raw_data' not in st.session_state:
         st.session_state.raw_data = None
 
-    if st.button("🔘　見積書を解析する", use_container_width=True):
-        with st.spinner('AIが精密解析中...（混雑回避モード稼働中）'):
+    if st.button("🔘 見積書を解析する", use_container_width=True):
+        with st.spinner('AIが精密解析中...（3.1 Flash-Lite 爆速モード稼働中）'):
             
-            # --- 画像の最適化と1枚への結合処理 ---
             images = []
             has_pdf = False
             pdf_bytes = None
@@ -71,7 +86,6 @@ if uploaded_files:
                     img = Image.open(f)
                     if img.mode != 'RGB':
                         img = img.convert('RGB')
-                    # 個々の画像を最大幅1500pxにリサイズしてメモリ節約
                     if img.width > 1500:
                         ratio = 1500 / img.width
                         img = img.resize((1500, int(img.height * ratio)), Image.Resampling.LANCZOS)
@@ -80,11 +94,9 @@ if uploaded_files:
                     has_pdf = True
                     pdf_bytes = f.getvalue()
 
-            # 複数枚の画像がある場合、縦に1枚に結合してサーバーの負荷を劇的に減らす
             if images and not has_pdf:
                 total_height = sum(img.height for img in images)
                 max_width = max(img.width for img in images)
-                
                 combined_img = Image.new('RGB', (max_width, total_height), (255, 255, 255))
                 current_y = 0
                 for img in images:
@@ -92,7 +104,7 @@ if uploaded_files:
                     current_y += img.height
                 
                 buf = io.BytesIO()
-                combined_img.save(buf, format="JPEG", quality=85) # 高画質と軽量化のベストバランス
+                combined_img.save(buf, format="JPEG", quality=85)
                 final_bytes = buf.getvalue()
                 mime_type = "image/jpeg"
             elif has_pdf:
@@ -104,7 +116,6 @@ if uploaded_files:
 
             file_base64 = base64.b64encode(final_bytes).decode('utf-8')
 
-            # --- 負荷を極限まで減らしたダイエット版プロンプト ---
             payload = {
                 "contents": [{
                     "parts": [
@@ -122,9 +133,7 @@ if uploaded_files:
             }
             headers = {'Content-Type': 'application/json'}
 
-            # --- 自動リトライ（粘り強いアタック）機能の組み込み ---
             max_retries = 3
-            success = False
             
             for attempt in range(max_retries):
                 try:
@@ -134,16 +143,15 @@ if uploaded_files:
                     ai_text = response.json()['candidates'][0]['content']['parts'][0]['text']
                     ai_text = ai_text.replace("```json", "").replace("```", "").strip()
                     st.session_state.raw_data = json.loads(ai_text)
-                    success = True
-                    break # 成功したらループを抜ける
+                    break
                 except Exception as e:
                     if attempt < max_retries - 1:
-                        time.sleep(3) # 503エラー時は3秒待って再試行
+                        time.sleep(3)
                         continue
                     else:
                         safe_error_msg = str(e).replace(API_KEY, "********")
                         st.error(f"解析エラー: {safe_error_msg}")
-                        st.warning("Googleのサーバーが極度に混雑しています。少し時間を空けてから再度お試しください。")
+                        st.warning("Googleのサーバーが混雑しています。少し時間を空けてから再度お試しください。")
 
     if st.session_state.raw_data:
         df_full = pd.DataFrame(st.session_state.raw_data)
@@ -153,12 +161,14 @@ if uploaded_files:
 
         categories = df_full["大項目"].unique()
         total_amount = 0
+        
+        # ★ 最終出力用のデータを集めるリスト
+        final_approved_items = []
 
         st.success("解析完了。各カテゴリのトグルで一括操作が可能です。")
 
         for cat in categories:
             cat_items = df_full[df_full["大項目"] == cat].copy()
-            
             cat_on = st.checkbox(f"📁 {cat} を計算に含める", value=True, key=f"master_{cat}")
             
             if cat_on:
@@ -172,7 +182,12 @@ if uploaded_files:
                     key=f"editor_{cat}"
                 )
                 
-                cat_sum = edited_df[edited_df["実施"]]["金額"].sum()
+                # 「実施」にチェックが入っているものだけを抽出し、大項目名も復活させてリストに格納
+                approved_rows = edited_df[edited_df["実施"]].copy()
+                approved_rows.insert(0, "大項目", cat)
+                final_approved_items.append(approved_rows)
+                
+                cat_sum = approved_rows["金額"].sum()
                 total_amount += cat_sum
                 st.write(f"小計: ¥{cat_sum:,.0f}")
             else:
@@ -180,8 +195,26 @@ if uploaded_files:
             
             st.markdown("---")
 
+        # --------------------------------------------------
+        # ★ 最終シミュレーション明細書の描画
+        # --------------------------------------------------
+        if final_approved_items:
+            st.markdown("### 📄 最終シミュレーション明細書")
+            st.caption("※ 上記で「実施」となっている項目のみを抽出した一覧です。")
+            
+            # リストに集めたDataFrameを1つに合体
+            final_df = pd.concat(final_approved_items, ignore_index=True)
+            # 最終表には「実施」チェックボックスは不要なので削除
+            final_df = final_df.drop(columns=["実施"])
+            
+            # 帳票として見やすい静的テーブル（全行表示）で出力
+            st.table(final_df)
+
+        st.markdown("<br><br>", unsafe_allow_html=True) # 余白
+
         if st.button("🗑️ データをリセットして新しい見積もりへ", use_container_width=True):
             st.session_state.raw_data = None
+            st.session_state.uploader_key += 1
             st.rerun()
 
         st.markdown(f"""

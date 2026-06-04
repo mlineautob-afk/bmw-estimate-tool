@@ -141,7 +141,7 @@ if uploaded_files:
             payload = {
                 "contents": [{
                     "parts": [
-                        { "text": "Analyze the BMW estimate sheet. Extract all items into a strict JSON array. Rule: Identify main categories starting with uppercase letters and include their full titles (e.g., 'A: 法定2年点検'). Format: [{'大項目': 'A: 法定2年点検', '項目': 'Item Name', '単価': 1000, '数量': 1, '金額': 1000}]. Return ONLY raw JSON." },
+                        { "text": "Analyze the BMW estimate sheet. Extract all items into a strict JSON array. CRITICAL RULE: When an item description spans across pages or multiple lines, do NOT split it. Merge them into a single coherent item name. Rule: Identify main categories starting with uppercase letters and include their full titles (e.g., 'A: 法定2年点検'). Format: [{'大項目': 'A: 法定2年点検', '項目': 'Item Name', '単価': 1000, '数量': 1, '金額': 1000}]. Return ONLY raw JSON." },
                         { "inline_data": { "mime_type": mime_type, "data": file_base64 } }
                     ]
                 }]
